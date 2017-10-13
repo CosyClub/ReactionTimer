@@ -17,6 +17,12 @@
 
 #define ArrayLength(array) (sizeof(array) / sizeof((array)[0]))
 
+// File name to output summary statistics to
+#define FILE_STATS   "./stats.csv"
+
+// File name to output full results to
+#define FILE_RESULTS "./results.csv"
+
 // Value used to represent a time delta for a beat which was missed
 const float MISSED_BEAT_DELTA = -10000.0f;
 
@@ -24,14 +30,12 @@ const float PRACTICE_DURATION = 7.0f;
 const float STAGE_DURATION    = 15.0f;
 
 /// \brief The beats per minute to test in each stage
-//const int STAGE_BPMS[] = {
-//	60,
-	//	90,
-	//	120,
-	//	150,
-	//};
 const int STAGE_BPMS[] = {
+	60,
 	90,
+	120,
+	160,
+	200,
 };
 #define STAGE_COUNT ArrayLength(STAGE_BPMS)
 
@@ -117,8 +121,23 @@ void updateStage(int stage){
 	text_practice.setPosition(30, 180);
 }
 
+bool fileExists(const char* name){
+	FILE* fh = fopen(name, "r");
+	if(fh){
+		fclose(fh);
+		return true;
+	}
+	return false;
+}
+
 int main(int argc, const char** argv){
-	if(!init()){ return 1; }
+	if(argc != 2){
+		printf("\n\nERROR: Usage ./ReactionTimer \"Run Name\"\n");
+		return 1;
+	}
+	const char* const run_name = argv[1];
+
+	if(!init()){ return 2; }
 
 	sf::RenderWindow app(sf::VideoMode(640, 400, 32),
 	                     std::string("Cosy Club Reaction Timer")
@@ -188,7 +207,6 @@ int main(int argc, const char** argv){
 		//////////////////////////////////////////
 		// Update beat stats and play if required
 		if(now - last_beat >= beat_delta){
-			printf("Tick\n");
 			tick.play();
 			last_beat = now;
 			if(!is_practice){
@@ -201,23 +219,34 @@ int main(int argc, const char** argv){
 
 	printf("Main loop ended, processing and outputting results...\n");
 
+	/////////////////////////////
+	// Open file handles
+	bool file_exists_results = fileExists(FILE_RESULTS);
+	FILE* fout_results = fopen(FILE_RESULTS, "a");
+	if(!fout_results){
+		printf("Failed to open results file, dumping to stdout\n");
+		fout_results = stdout;
+		file_exists_results = false;
+	}
+
+	bool file_exists_stats = fileExists(FILE_STATS);
+	FILE* fout_stats = fopen(FILE_STATS, "a");
+	if(!fout_results){
+		printf("Failed to open stats file, dumping to stdout\n");
+		fout_stats = stdout;
+		file_exists_stats = false;
+	}
+
+	if(!file_exists_results){
+		fprintf(fout_results, "run, bpm, delta\n");
+	}
+	if(!file_exists_stats){
+		fprintf(fout_stats, "run, bpm, missed_beats, hit_beats, extra_keys,"
+		                    "min_delta, avg_delta, max_delta\n");
+	}
+
 	for(unsigned int i = 0; i < STAGE_COUNT; ++i){
 		StageStats* s = &stats[i];
-
-		/*printf("Stage %i\n", i+1);
-		printf("  BPM        : %i\n", s->bpm);
-		printf("  Key Count  : %i\n", s->key_count);
-		printf("  Beat Count : %i\n", s->beat_count);
-
-		printf("-----beats-----\n");
-		for(int j = 0; j < s->beat_count; ++j){
-			printf("%f\n", s->beat_times[j]);
-		}
-
-		printf("-----keys-----\n");
-		for(int j = 0; j < s->key_count; ++j){
-			printf("%f\n", s->key_times[j]);
-			}*/
 
 		int* key_to_beat = (int*)malloc(s->key_count * sizeof(int));
 
@@ -240,9 +269,8 @@ int main(int argc, const char** argv){
 			} else if(diff_2 <= diff_0 && diff_2 <= diff_1){
 				key_to_beat[key] = beat+1;
 			} else {
-				printf("ERROR: CANT LINE UP KEY WITH BEAT\n");
+				printf("ERROR: CANT LINE UP KEY %i WITH BEAT\n", key);
 			}
-			//printf("key_to_beat[%i]: %i\n", key, key_to_beat[key]);
 		}
 
 		if(s->key_count > s->beat_count &&                     // to many key presses AND
@@ -290,23 +318,26 @@ int main(int argc, const char** argv){
 		printf("BPM: %i, Missed: %i, Hit: %i, Extra Keys: %i\n",
 		       s->bpm, missed_beats, hit_beats, extra_keys);
 		for(int i = 0; i < s->beat_count; ++i){
-			//printf("%f\n", deltas[i]);
 			if(deltas[i] <= MISSED_BEAT_DELTA){ continue; }
+			fprintf(fout_results, "%s, %i, %f\n", run_name, s->bpm, deltas[i]);
 			float a = fabs(deltas[i]);
 			if(a > max_delta){ max_delta = a; }
 			if(a < min_delta){ min_delta = a; }
-			avg_delta += deltas[i];
+			avg_delta += a;
 		}
 		avg_delta /= hit_beats;
-		printf("  Deltas, min: %6.4f, avg: %6.4f, max: %6.4f\n",
-		       min_delta, avg_delta, max_delta
-		       );
+		fprintf(fout_stats, "%s, %i, %i, %i, %i, %f, %f, %f\n",
+		        run_name, s->bpm, missed_beats, hit_beats, extra_keys, min_delta, avg_delta, max_delta);
 
 		free(key_to_beat);
 		free(deltas);
 	}
 
+	//////////////////////////////////
+	// Clean up
 	printf("Done, cleaning up...\n");
+	if(fout_results && fout_results != stdout){ fclose(fout_results); }
+	if(fout_stats   && fout_stats   != stdout){ fclose(fout_stats  ); }
 	shutdown();
 
 	printf("Exiting\n");
