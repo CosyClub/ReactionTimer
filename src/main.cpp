@@ -5,7 +5,6 @@
 /// \brief Contains entry point for ReactionTimer
 ////////////////////////////////////////////////////////////////////////////
 
-
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
@@ -21,12 +20,17 @@
 const float PRACTICE_DURATION = 7.0f;
 const float STAGE_DURATION    = 15.0f;
 
-float stage_bpms[] = {
-	60,
+/// \brief The beats per minute to test in each stage
+//const int STAGE_BPMS[] = {
+//	60,
+	//	90,
+	//	120,
+	//	150,
+	//};
+const int STAGE_BPMS[] = {
 	90,
-	120,
-	150,
 };
+#define STAGE_COUNT ArrayLength(STAGE_BPMS)
 
 int bpm; //beats per minute
 float beat_delta;
@@ -42,7 +46,21 @@ sf::Text text_practice;
 bool is_practice; // if we're currently in practice mode
 int  past_beats;  // number of beats that have occured in this stage
 
-bool loadResources(){
+/// \brief Represents statistics for a given stage
+struct StageStats {
+	int bpm;           /// \brief beats per minute of this stage
+
+	int    beat_count; /// \brief number of beats that occured in the stage
+	float* beat_times; /// \brief array of times at which a beat occured
+
+	int    key_count;  /// \brief number of times a key was pressed during the stage
+	float* key_times;  /// \brief array of times at which a key was pressed
+};
+StageStats stats[STAGE_COUNT];
+
+/// \brief Loads resources (sounds, fonts) required by
+/// the app and allocates memory
+bool init(){
 	if(!tick_buffer.loadFromFile("tick.ogg")){
 		printf("Failed to load tick.ogg\n");
 		return false;
@@ -54,13 +72,33 @@ bool loadResources(){
 		return false;
 	}
 
+	for(unsigned int i = 0; i < STAGE_COUNT; ++i){
+		stats[i]     = {0};
+		stats[i].bpm = STAGE_BPMS[i];
+
+		// there will be STAGE_DURATION * beats per second beats in the stage
+		// + 2 to be safe
+		stats[i].beat_times = (float*)malloc((STAGE_DURATION * ((STAGE_BPMS[i] / 60.0)) + 2) * sizeof(float));
+
+		// lets assume player can only press a key 5 times a second
+		stats[i].beat_times = (float*)malloc(STAGE_DURATION * 5 * sizeof(float));
+	}
+
 	return true;
 }
 
+void shutdown(){
+	for(unsigned int i = 0; i < STAGE_COUNT; ++i){
+		free(stats[i].beat_times);
+		free(stats[i].key_times);
+	}
+}
+
+/// \brief Proceeds to the next testing stage
 void updateStage(int stage){
 	is_practice = true;
 	past_beats = 0;
-	bpm = stage_bpms[stage];
+	bpm = STAGE_BPMS[stage];
 	beat_delta = 60.0f / bpm;
 
 	snprintf(text_bmp_buffer, 32, "BPM: %i", bpm);
@@ -74,9 +112,8 @@ void updateStage(int stage){
 	text_practice.setPosition(30, 180);
 }
 
-
 int main(int argc, const char** argv){
-	if(!loadResources()){ return 1; }
+	if(!init()){ return 1; }
 
 
 	sf::RenderWindow app(sf::VideoMode(640, 400, 32),
@@ -84,7 +121,7 @@ int main(int argc, const char** argv){
 	                     );
 	sf::Event event;
 
-	int stage = 0;
+	unsigned int stage = 0;
 	updateStage(stage);
 
 	sf::Clock clock;
@@ -100,12 +137,11 @@ int main(int argc, const char** argv){
 			if(now - stage_start > PRACTICE_DURATION){
 				stage_start = now;
 				is_practice = false;
-				past_beats  = 0;
 			}
 		} else {
 			if(now - stage_start > STAGE_DURATION){
 				++stage;
-				if(stage >= ArrayLength(stage_bpms)){
+				if(stage >= STAGE_COUNT){
 					app.close();
 					break;
 				}
@@ -120,6 +156,12 @@ int main(int argc, const char** argv){
 			switch(event.type){
 			case sf::Event::Closed:
 				app.close();
+				break;
+			case sf::Event::KeyPressed:
+				if(!is_practice){
+					stats[stage].key_times[stats[stage].key_count] = now;
+					++stats[stage].key_count;
+				}
 				break;
 			default: break;
 			}
@@ -145,10 +187,16 @@ int main(int argc, const char** argv){
 			printf("Tick\n");
 			tick.play();
 			last_beat = now;
-			++past_beats;
+			stats[stage].beat_times[stats[stage].beat_count] = now;
+			++stats[stage].beat_count;
 		}
 
 	} // end of main loop
-	printf("Main loop ended\n");
+
+	printf("Main loop ended, processing results...\n");
+
+	printf("Results processed");
+
+	shutdown();
 	return 0;
 }
