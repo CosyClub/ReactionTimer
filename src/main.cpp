@@ -151,6 +151,8 @@ int main(int argc, const char** argv){
 	float last_beat = clock.getElapsedTime().asSeconds();
 	float stage_start = last_beat;
 
+	bool finished_naturally = false;
+
 	while(app.isOpen()){
 		float now = clock.getElapsedTime().asSeconds();
 
@@ -165,6 +167,7 @@ int main(int argc, const char** argv){
 			if(now - stage_start > STAGE_DURATION){
 				++stage;
 				if(stage >= STAGE_COUNT){
+					finished_naturally = true;
 					app.close();
 					break;
 				}
@@ -216,6 +219,11 @@ int main(int argc, const char** argv){
 		}
 
 	} // end of main loop
+
+	if(!finished_naturally){
+		printf("App closed prematurely, discarding data :(\n");
+		return 0;
+	}
 
 	printf("Main loop ended, processing and outputting results...\n");
 
